@@ -12,5 +12,8 @@ Instrucciones de importación:
 - Sustituye los nodos "stub" por OCR real (AWS Textract o Google Document AI) si lo necesitas.
 
 Flujo:
-Webhook → Normalize → (Download stub) → (OCR stub) → OpenAI → Parse → Guardrails → If Review → [Wait/Webhook] → Merge → Postgres → Airtable → Respond
+Webhook → Normalize → (Download stub) → (OCR stub) → OpenAI → Parse → Guardrails → If Review → [Wait/Webhook] → Merge → Map Estado → Postgres → Airtable → Respond
+
+Notas:
+- El nodo "Map Estado" traduce `clasificacion.etiqueta` a un campo `Estado` de CRM: Apertura, Rechazado, Pendiente información, Revisión fraude, Pago, En peritaje, Legal.
 

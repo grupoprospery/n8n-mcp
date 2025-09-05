@@ -24,6 +24,16 @@
     },
     {
       "parameters": {
+        "functionCode": "// Mapea etiqueta a un Estado de CRM\nconst etiqueta = ($json.clasificacion?.etiqueta || '').toString();\nlet estado = 'Pendiente';\nswitch (etiqueta) {\n  case 'Apertura_cobertura':\n    estado = 'Apertura'; break;\n  case 'Apertura_sin_cobertura':\n    estado = 'Rechazado'; break;\n  case 'Complemento_info':\n    estado = 'Pendiente información'; break;\n  case 'Fraude_sospecha':\n    estado = 'Revisión fraude'; break;\n  case 'Pago_inmediato':\n    estado = 'Pago'; break;\n  case 'Derivar_peritaje':\n    estado = 'En peritaje'; break;\n  case 'Derivar_legal':\n    estado = 'Legal'; break;\n  default:\n    estado = 'Pendiente';\n}\nreturn [{ json: { ...$json, estado } }];"
+      },
+      "id": "Fn_MapEstado",
+      "name": "Map Estado",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 2560, 300 ]
+    },
+    {
+      "parameters": {
         "functionCode": "// Normaliza entrada: id, canal, files, meta\nconst body = $json;\nconst id = body.id || $now();\nconst canal = body.canal || 'web';\nconst files = Array.isArray(body.files) ? body.files : [];\nconst meta = body.meta || {};\nreturn [{ json: { id, canal, files, meta } }];"
       },
       "id": "Fn_Normalize",
@@ -173,7 +183,7 @@
         "sendHeaders": true,
         "headerParametersJson": "={\n  \"Content-Type\": \"application/json\",\n  \"Authorization\": \"Bearer \" + $env(\"AIRTABLE_API_KEY\")\n}",
         "sendBody": true,
-        "bodyParametersJson": "={\n  \"performUpsert\": { \n    \"fieldsToMergeOn\": [\"SiniestroID\"]\n  },\n  \"records\": [\n    {\n      \"fields\": {\n        \"SiniestroID\": $json.id,\n        \"Etiqueta\": $json.clasificacion.etiqueta,\n        \"Subclase\": $json.clasificacion.subclase || null,\n        \"Confianza\": $json.clasificacion.confianza,\n        \"Canal\": $json.canal,\n        \"Meta\": JSON.stringify($json.meta || {}),\n        \"DetalleJSON\": JSON.stringify($json)\n      }\n    }\n  ]\n}"
+        "bodyParametersJson": "={\n  \"performUpsert\": { \n    \"fieldsToMergeOn\": [\"SiniestroID\"]\n  },\n  \"records\": [\n    {\n      \"fields\": {\n        \"SiniestroID\": $json.id,\n        \"Etiqueta\": $json.clasificacion.etiqueta,\n        \"Subclase\": $json.clasificacion.subclase || null,\n        \"Confianza\": $json.clasificacion.confianza,\n        \"Estado\": $json.estado || 'Pendiente',\n        \"Canal\": $json.canal,\n        \"Meta\": JSON.stringify($json.meta || {}),\n        \"DetalleJSON\": JSON.stringify($json)\n      }\n    }\n  ]\n}"
       },
       "id": "Airtable_CRM",
       "name": "Airtable CRM Upsert (SiniestroID)",
@@ -230,6 +240,9 @@
       "main": [ [ { "node": "Merge After Review", "type": "main", "index": 0 } ] ]
     },
     "Merge After Review": {
+      "main": [ [ { "node": "Map Estado", "type": "main", "index": 0 } ] ]
+    },
+    "Map Estado": {
       "main": [ [ { "node": "Persist to Postgres", "type": "main", "index": 0 } ] ]
     },
     "Persist to Postgres": {
