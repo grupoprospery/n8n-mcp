@@ -163,7 +163,7 @@
     {
       "parameters": {
         "requestMethod": "POST",
-        "url": "=\"https://api.airtable.com/v0/\" + $env(\"AIRTABLE_BASE_ID\") + \"/Clientes\"",
+        "url": "=\"https://api.airtable.com/v0/\" + $env(\"AIRTABLE_BASE_ID\") + \"/Clientes?performUpsert=true\"",
         "jsonParameters": true,
         "options": {
           "response": {
@@ -173,10 +173,10 @@
         "sendHeaders": true,
         "headerParametersJson": "={\n  \"Content-Type\": \"application/json\",\n  \"Authorization\": \"Bearer \" + $env(\"AIRTABLE_API_KEY\")\n}",
         "sendBody": true,
-        "bodyParametersJson": "={\n  \"records\": [\n    {\n      \"fields\": {\n        \"SiniestroID\": $json.id,\n        \"Etiqueta\": $json.clasificacion.etiqueta,\n        \"Subclase\": $json.clasificacion.subclase || null,\n        \"Confianza\": $json.clasificacion.confianza,\n        \"Canal\": $json.canal,\n        \"Meta\": JSON.stringify($json.meta || {}),\n        \"DetalleJSON\": JSON.stringify($json)\n      }\n    }\n  ]\n}"
+        "bodyParametersJson": "={\n  \"performUpsert\": { \n    \"fieldsToMergeOn\": [\"SiniestroID\"]\n  },\n  \"records\": [\n    {\n      \"fields\": {\n        \"SiniestroID\": $json.id,\n        \"Etiqueta\": $json.clasificacion.etiqueta,\n        \"Subclase\": $json.clasificacion.subclase || null,\n        \"Confianza\": $json.clasificacion.confianza,\n        \"Canal\": $json.canal,\n        \"Meta\": JSON.stringify($json.meta || {}),\n        \"DetalleJSON\": JSON.stringify($json)\n      }\n    }\n  ]\n}"
       },
       "id": "Airtable_CRM",
-      "name": "Airtable CRM Upsert",
+      "name": "Airtable CRM Upsert (SiniestroID)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [ 2920, 300 ]
