@@ -1,0 +1,250 @@
+{
+  "name": "Clasificador de Siniestros - IA + Guardrails",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "claims/intake",
+        "responseMode": "responseNode",
+        "options": {
+          "responseData": "={{$json}}",
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              { "name": "Content-Type", "value": "application/json" }
+            ]
+          }
+        }
+      },
+      "id": "Webhook_Claims",
+      "name": "Webhook Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [ 280, 300 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Normaliza entrada: id, canal, files, meta\nconst body = $json;\nconst id = body.id || $now();\nconst canal = body.canal || 'web';\nconst files = Array.isArray(body.files) ? body.files : [];\nconst meta = body.meta || {};\nreturn [{ json: { id, canal, files, meta } }];"
+      },
+      "id": "Fn_Normalize",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 520, 300 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Descarga archivos si hay URLs (placeholder).\n// Producción: usa HTTP Request -> Binary y OCR dedicado (Textract/DocAI).\nreturn items;"
+      },
+      "id": "Fn_DownloadStub",
+      "name": "Download Files (stub)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 760, 300 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Simula OCR/fusiona campos OCR si ya vienen listos.\n// Reemplaza por AWS Textract o Google Document AI.\nconst ocr = $json.ocr || { text: $json.text || '', calidad: 0.9 };\nreturn [{ json: { ...$json, ocr } }];"
+      },
+      "id": "Fn_OCRStub",
+      "name": "OCR / Parsing (stub)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1000, 300 ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "requestMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "jsonParameters": true,
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        },
+        "sendHeaders": true,
+        "headerParametersJson": "={\n  \"Content-Type\": \"application/json\",\n  \"Authorization\": \"Bearer \" + $env(\"OPENAI_API_KEY\")\n}",
+        "sendBody": true,
+        "bodyParametersJson": "={\n  \"model\": \"gpt-4o-mini\",\n  \"temperature\": 0.2,\n  \"response_format\": {\n    \"type\": \"json_schema\",\n    \"json_schema\": {\n      \"name\": \"claims_classification\",\n      \"schema\": {\n        \"type\": \"object\",\n        \"additionalProperties\": false,\n        \"properties\": {\n          \"etiqueta\": {\"type\": \"string\"},\n          \"subclase\": {\"type\": \"string\"},\n          \"confianza\": {\"type\": \"number\", \"minimum\": 0, \"maximum\": 1},\n          \"explicacion\": {\"type\": \"string\"},\n          \"claves\": {\"type\": \"object\"}\n        },\n        \"required\": [\"etiqueta\", \"confianza\"]\n      }\n    }\n  },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Eres un clasificador experto de siniestros. Devuelve SOLO JSON con campos: etiqueta, subclase, confianza (0-1), explicacion, claves.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Contexto OCR:\\n\" + ($json.ocr?.text || '') + \"\\nMeta:\\n\" + JSON.stringify({ canal: $json.canal, meta: $json.meta })\n    }\n  ]\n}"
+      },
+      "id": "HTTP_OpenAI",
+      "name": "OpenAI Classify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 1240, 300 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extrae la respuesta JSON del modelo (OpenAI Chat).\nconst choice = $json.choices?.[0];\nlet payload;\nif (choice?.message?.content) {\n  // En modelos JSON mode, content debe ser JSON\n  try {\n    payload = typeof choice.message.content === 'string'\n      ? JSON.parse(choice.message.content)\n      : choice.message.content;\n  } catch (e) {\n    payload = { etiqueta: 'Complemento_info', confianza: 0.0, explicacion: 'Parse error', claves: {} };\n  }\n} else if ($json.content) {\n  payload = $json.content;\n} else {\n  payload = { etiqueta: 'Complemento_info', confianza: 0.0, explicacion: 'No content', claves: {} };\n}\nreturn [{ json: { ...$json, ia: payload } }];"
+      },
+      "id": "Fn_ParseIA",
+      "name": "Parse IA JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1480, 300 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Guardrails y mapeo a etiquetas controladas\nconst ia = $json.ia || {};\nconst confianza = Number(ia.confianza ?? 0);\nconst etiquetaModel = (ia.etiqueta || '').toString().toLowerCase();\nconst map = {\n  'apertura_cobertura': 'Apertura_cobertura',\n  'apertura_sin_cobertura': 'Apertura_sin_cobertura',\n  'complemento_info': 'Complemento_info',\n  'fraude_sospecha': 'Fraude_sospecha',\n  'pago_inmediato': 'Pago_inmediato',\n  'derivar_peritaje': 'Derivar_peritaje',\n  'derivar_legal': 'Derivar_legal'\n};\nlet etiqueta = map[etiquetaModel] || 'Complemento_info';\nlet requiereRevision = false;\n// Regla de umbral\nif (confianza < 0.7) requiereRevision = true;\n// TODO: aplica más reglas duras (fraude, cobertura, ilegible) si las tienes en $json\nreturn [{ json: { ...$json, clasificacion: { etiqueta, subclase: ia.subclase || null, confianza, explicacion: ia.explicacion || '', claves: ia.claves || {} , requiereRevision } } }];"
+      },
+      "id": "Fn_Guardrails",
+      "name": "Guardrails + Mapping",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1720, 300 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [],
+          "number": [],
+          "string": [
+            {
+              "value1": "={{$json.clasificacion.requiereRevision ? 'si' : 'no'}}",
+              "operation": "equal",
+              "value2": "si"
+            }
+          ]
+        }
+      },
+      "id": "If_Revision",
+      "name": "Needs Human Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [ 1960, 300 ]
+    },
+    {
+      "parameters": {
+        "mode": "wait",
+        "resume": "webhook",
+        "responseData": "={{$json}}"
+      },
+      "id": "Wait_Human",
+      "name": "Human Review (Webhook)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [ 2200, 200 ]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByFields",
+        "mergeByFields": {
+          "fieldsToMatch": ["id"]
+        }
+      },
+      "id": "Merge_Back",
+      "name": "Merge After Review",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [ 2440, 300 ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO siniestros_clasificados (id, etiqueta, subclase, confianza, json_detalle, version_modelo, hash_prompt) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7) ON CONFLICT (id) DO UPDATE SET etiqueta=EXCLUDED.etiqueta, subclase=EXCLUDED.subclase, confianza=EXCLUDED.confianza, json_detalle=EXCLUDED.json_detalle, version_modelo=EXCLUDED.version_modelo, hash_prompt=EXCLUDED.hash_prompt;",
+        "additionalFields": {
+          "values": "={{ [ $json.id, $json.clasificacion.etiqueta, $json.clasificacion.subclase, $json.clasificacion.confianza, JSON.stringify($json), 'v2025.06', 'prompt_hash_placeholder' ] }}"
+        }
+      },
+      "id": "PG_Insert",
+      "name": "Persist to Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "credentials": {
+        "postgres": {
+          "id": "={{$env(\"N8N_PG_CREDENTIAL_ID\") || ''}}",
+          "name": "Postgres"
+        }
+      },
+      "position": [ 2680, 300 ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "requestMethod": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "jsonParameters": true,
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        },
+        "sendHeaders": true,
+        "headerParametersJson": "={\n  \"Content-Type\": \"application/json; charset=utf-8\",\n  \"Authorization\": \"Bearer \" + $env(\"SLACK_BOT_TOKEN\")\n}",
+        "sendBody": true,
+        "bodyParametersJson": "={\n  \"channel\": \"#claims\",\n  \"text\": \"Nuevo siniestro clasificado: \" + $json.id + \" → \" + $json.clasificacion.etiqueta + \" (\" + $json.clasificacion.confianza + ")\"\n}"
+      },
+      "id": "Slack_Notify",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 2920, 300 ]
+    },
+    {
+      "parameters": {
+        "responseBody": "={{ JSON.stringify({ id: $json.id, etiqueta: $json.clasificacion.etiqueta, subclase: $json.clasificacion.subclase, confianza: $json.clasificacion.confianza }, null, 2) }}",
+        "responseCode": 200,
+        "responseHeaders": {
+          "entries": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        }
+      },
+      "id": "Resp_OK",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [ 3160, 300 ]
+    }
+  ],
+  "connections": {
+    "Webhook Intake": {
+      "main": [ [ { "node": "Normalize Input", "type": "main", "index": 0 } ] ]
+    },
+    "Normalize Input": {
+      "main": [ [ { "node": "Download Files (stub)", "type": "main", "index": 0 } ] ]
+    },
+    "Download Files (stub)": {
+      "main": [ [ { "node": "OCR / Parsing (stub)", "type": "main", "index": 0 } ] ]
+    },
+    "OCR / Parsing (stub)": {
+      "main": [ [ { "node": "OpenAI Classify", "type": "main", "index": 0 } ] ]
+    },
+    "OpenAI Classify": {
+      "main": [ [ { "node": "Parse IA JSON", "type": "main", "index": 0 } ] ]
+    },
+    "Parse IA JSON": {
+      "main": [ [ { "node": "Guardrails + Mapping", "type": "main", "index": 0 } ] ]
+    },
+    "Guardrails + Mapping": {
+      "main": [ [ { "node": "Needs Human Review?", "type": "main", "index": 0 } ] ]
+    },
+    "Needs Human Review?": {
+      "main": [
+        [ { "node": "Human Review (Webhook)", "type": "main", "index": 0 } ],
+        [ { "node": "Merge After Review", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Human Review (Webhook)": {
+      "main": [ [ { "node": "Merge After Review", "type": "main", "index": 0 } ] ]
+    },
+    "Merge After Review": {
+      "main": [ [ { "node": "Persist to Postgres", "type": "main", "index": 0 } ] ]
+    },
+    "Persist to Postgres": {
+      "main": [ [ { "node": "Slack Notify", "type": "main", "index": 0 } ] ]
+    },
+    "Slack Notify": {
+      "main": [ [ { "node": "Respond", "type": "main", "index": 0 } ] ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "template": "claims_classifier_2025_minimal",
+    "version_modelo": "v2025.06",
+    "notes": "Reemplaza los nodos stub por OCR real (Textract/DocAI). Configura OPENAI_API_KEY/SLACK_BOT_TOKEN y credenciales Postgres."
+  }
+}
+
