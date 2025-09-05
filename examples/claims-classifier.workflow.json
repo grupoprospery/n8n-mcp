@@ -162,9 +162,8 @@
     },
     {
       "parameters": {
-        "authentication": "predefinedCredentialType",
         "requestMethod": "POST",
-        "url": "https://slack.com/api/chat.postMessage",
+        "url": "=\"https://api.airtable.com/v0/\" + $env(\"AIRTABLE_BASE_ID\") + \"/Clientes\"",
         "jsonParameters": true,
         "options": {
           "response": {
@@ -172,12 +171,12 @@
           }
         },
         "sendHeaders": true,
-        "headerParametersJson": "={\n  \"Content-Type\": \"application/json; charset=utf-8\",\n  \"Authorization\": \"Bearer \" + $env(\"SLACK_BOT_TOKEN\")\n}",
+        "headerParametersJson": "={\n  \"Content-Type\": \"application/json\",\n  \"Authorization\": \"Bearer \" + $env(\"AIRTABLE_API_KEY\")\n}",
         "sendBody": true,
-        "bodyParametersJson": "={\n  \"channel\": \"#claims\",\n  \"text\": \"Nuevo siniestro clasificado: \" + $json.id + \" → \" + $json.clasificacion.etiqueta + \" (\" + $json.clasificacion.confianza + ")\"\n}"
+        "bodyParametersJson": "={\n  \"records\": [\n    {\n      \"fields\": {\n        \"SiniestroID\": $json.id,\n        \"Etiqueta\": $json.clasificacion.etiqueta,\n        \"Subclase\": $json.clasificacion.subclase || null,\n        \"Confianza\": $json.clasificacion.confianza,\n        \"Canal\": $json.canal,\n        \"Meta\": JSON.stringify($json.meta || {}),\n        \"DetalleJSON\": JSON.stringify($json)\n      }\n    }\n  ]\n}"
       },
-      "id": "Slack_Notify",
-      "name": "Slack Notify",
+      "id": "Airtable_CRM",
+      "name": "Airtable CRM Upsert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [ 2920, 300 ]
@@ -234,9 +233,9 @@
       "main": [ [ { "node": "Persist to Postgres", "type": "main", "index": 0 } ] ]
     },
     "Persist to Postgres": {
-      "main": [ [ { "node": "Slack Notify", "type": "main", "index": 0 } ] ]
+      "main": [ [ { "node": "Airtable CRM Upsert", "type": "main", "index": 0 } ] ]
     },
-    "Slack Notify": {
+    "Airtable CRM Upsert": {
       "main": [ [ { "node": "Respond", "type": "main", "index": 0 } ] ]
     }
   },
@@ -244,7 +243,7 @@
   "meta": {
     "template": "claims_classifier_2025_minimal",
     "version_modelo": "v2025.06",
-    "notes": "Reemplaza los nodos stub por OCR real (Textract/DocAI). Configura OPENAI_API_KEY/SLACK_BOT_TOKEN y credenciales Postgres."
+    "notes": "Reemplaza los nodos stub por OCR real (Textract/DocAI). Configura OPENAI_API_KEY, AIRTABLE_API_KEY, AIRTABLE_BASE_ID y credenciales Postgres."
   }
 }
 
